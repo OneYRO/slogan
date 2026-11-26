@@ -1,0 +1,26 @@
+{
+  "name": "slogan",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Slogan · 多商户数字商品自动发货系统（Cloudflare Workers + D1）",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local --port 8787",
+    "db:create": "wrangler d1 create slogan",
+    "db:migrate:local": "wrangler d1 migrations apply slogan --local",
+    "db:migrate:remote": "wrangler d1 migrations apply slogan --remote",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "smoke": "node tests/smoke.mjs",
+    "seed": "node scripts/seed-demo.mjs",
+    "import:legacy": "node scripts/import-legacy.mjs"
+  },
+  "dependencies": {
+    "hono": "^4.13.22"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261125.1",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.168.0"
+  }
+}

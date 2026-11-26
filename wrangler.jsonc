@@ -1,0 +1,43 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "slogan",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // 静态资源（前台 / 后台页面）
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "none",
+    // 所有请求先进 Worker：保证自定义 ADMIN_PATH 生效，静态资源统一经 ASSETS 绑定输出
+    "run_worker_first": true
+  },
+
+  // D1 数据库：本地开发用占位 ID，线上由 wrangler d1 create 生成
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "slogan",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+
+  // 媒体库（可选）：先 npx wrangler r2 bucket create slogan-media，再取消下面注释
+  // "r2_buckets": [
+  //   { "binding": "BUCKET", "bucket_name": "slogan-media" }
+  // ],
+
+  "vars": {
+    "ADMIN_PATH": "admin"
+  },
+
+  // 每 5 分钟关闭一次超时未支付订单
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+
+  "observability": {
+    "enabled": true
+  }
+}

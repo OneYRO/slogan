@@ -1,0 +1,5 @@
+# 后台访问路径（不要带 /，建议改成随机字符串）
+ADMIN_PATH=admin-3q9527ko8
+# 可选：Cloudflare Turnstile
+# TURNSTILE_SITE_KEY=
+# TURNSTILE_SECRET_KEY=

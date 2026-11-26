@@ -1,0 +1,35 @@
+{
+  "// 说明": "把旧系统导出的 CSV 列名映射到本系统字段；数组表示多列拼接（例如卡号 + 密码）",
+  "output": "legacy-import.sql",
+  "category": { "name": "老数据导入" },
+
+  "products": {
+    "file": "export/goods.csv",
+    "map": {
+      "name": "name",
+      "price_yuan": "price",
+      "cost_yuan": "cost",
+      "stock": "stock",
+      "description": "description"
+    },
+    "default": { "delivery_mode": "auto" }
+  },
+
+  "cards": {
+    "file": "export/cards.csv",
+    "map": {
+      "product": "goods_name",
+      "content": ["card_no", "card_pwd"]
+    },
+    "joiner": "----",
+    "fallback_product": ""
+  },
+
+  "users": {
+    "file": "export/users.csv",
+    "map": {
+      "email": "email",
+      "balance_yuan": "balance"
+    }
+  }
+}

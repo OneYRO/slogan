@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>Slogan · 管理后台</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/assets/css/admin.css" />
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('fh-theme');
+        if (!t) t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="side-brand">
+        <span class="mark">S</span>
+        <div><strong>Slogan</strong><span>发卡管理后台</span></div>
+      </div>
+      <nav class="side-nav" id="sideNav"></nav>
+      <div class="side-foot">
+        <a href="/" target="_blank" rel="noopener" id="viewSite">查看前台站点 ↗</a>
+        <a href="#" id="logoutLink">退出登录</a>
+      </div>
+    </aside>
+    <div class="main">
+      <header class="topbar">
+        <button class="menu-btn" id="menuBtn" aria-label="菜单"></button>
+        <div class="crumb" id="crumb">仪表盘</div>
+        <div class="topbar-actions">
+          <span class="who" id="who"></span>
+          <select class="merchant-switch" id="merchantSwitch" hidden aria-label="切换店铺"></select>
+          <button class="icon-btn" id="themeToggle" title="切换主题"></button>
+          <span class="badge badge-blue" id="verBadge">v1.0</span>
+        </div>
+      </header>
+      <div class="content" id="adminApp">
+        <div class="page-loading" style="text-align:center;padding:120px 0;color:var(--muted)">
+          <div class="spinner" style="width:26px;height:26px;border:2.5px solid var(--border-2);border-top-color:var(--brand);border-radius:50%;margin:0 auto 10px;animation:spin .8s linear infinite"></div>
+          正在加载后台…
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-root" id="modalRoot" hidden></div>
+  <div class="toast-root" id="toastRoot"></div>
+  <div class="drawer-mask" id="drawerMask" hidden></div>
+  <div class="drawer" id="drawer" hidden>
+    <div class="drawer-head"><h3 id="drawerTitle">详情</h3><button class="icon-btn" id="drawerClose"></button></div>
+    <div class="drawer-body" id="drawerBody"></div>
+    <div class="drawer-foot" id="drawerFoot"></div>
+  </div>
+
+  <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+  <script src="/assets/js/ui.js"></script>
+  <script src="/assets/js/admin.js"></script>
+</body>
+</html>
