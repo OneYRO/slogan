@@ -188,12 +188,23 @@ auth.get('/me', async (c) => {
   const user = c.get('user');
   if (!user) return c.json({ ok: true, data: null });
 
-  // 同一浏览器已登录后台时，前台头像菜单显示「进入后台」入口
+  // 前台用户与后台管理员是两套账号：优先看后台会话；
+  // 没有后台会话时，再用前台邮箱/邮箱前缀匹配管理员用户名（如 admin@example.com ↔ admin）。
   const adminToken = parseCookies(c.req.header('cookie'))[ADMIN_COOKIE];
   const adminId = await getSessionSubject(c.env, adminToken, 'admin');
+  const email = String(user.email || '').toLowerCase();
+  const localPart = email.split('@')[0];
+  const matchedAdmin = adminId
+    ? true
+    : Number(await scalar<number>(
+        c.env,
+        'SELECT COUNT(*) AS c FROM admins WHERE lower(username) = ? OR lower(username) = ?',
+        email,
+        localPart,
+      )) > 0;
   const data: any = await publicUser(c.env, user);
-  data.is_admin = !!adminId;
-  data.admin_url = adminId ? `/${c.env.ADMIN_PATH || 'admin'}` : null;
+  data.is_admin = matchedAdmin;
+  data.admin_url = matchedAdmin ? `/${c.env.ADMIN_PATH || 'admin'}` : null;
   return c.json({ ok: true, data });
 });
 

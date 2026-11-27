@@ -314,8 +314,8 @@ input[type="text"], input[type="email"], input[type="password"], input[type="num
 }
 .field textarea { height: auto; min-height: 92px; padding: 11px 13px; resize: vertical; line-height: 1.65; }
 .field input:focus, .field select:focus, .field textarea:focus,
-input:focus, textarea:focus, select:focus {
-  border-color: var(--brand); box-shadow: 0 0 0 4px var(--brand-soft);
+input:focus, input:focus-visible, textarea:focus, textarea:focus-visible, select:focus, select:focus-visible {
+  border-color: var(--brand); box-shadow: 0 0 0 4px var(--brand-soft); outline: none;
 }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
