@@ -6,6 +6,7 @@ import { calcUnit, levelDiscountOf, parseTiers } from '../orders';
 import { availableChannels } from '../payments';
 import { HttpError, dayStart, maskCard, now, pageResult, pager, parseJSON, toInt } from '../util';
 import { merchantSiteConfig, publicMerchant, resolveMerchant } from '../merchants';
+import { getSecurity } from '../settings';
 import type { Category, Product, Sku } from '../types';
 
 export const site = new Hono<AppEnv>();
@@ -16,6 +17,12 @@ site.use('*', optionalUser);
 site.get('/site', async (c) => {
   const merchant = await resolveMerchant(c.env, c.req.raw);
   const cfg = await merchantSiteConfig(c.env, merchant);
+  const security = await getSecurity(c.env);
+  const publicCfg = {
+    ...cfg,
+    turnstile_enabled: !!security.turnstile.enabled,
+    turnstile_site_key: security.turnstile.site_key,
+  };
   const categories = await all<Category>(
     c.env,
     'SELECT * FROM categories WHERE enabled = 1 AND merchant_id = ? ORDER BY sort ASC, id ASC',
@@ -41,7 +48,7 @@ site.get('/site', async (c) => {
   return c.json({
     ok: true,
     data: {
-      site: cfg,
+      site: publicCfg,
       merchant: publicMerchant(merchant),
       categories,
       channels,

@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../auth';
-import { optionalUser, requireUser, USER_COOKIE, cookieHeader, clearCookieHeader, createSession, destroySession, parseCookies, loginGuard, loginClear, clientOf } from '../auth';
+import { optionalUser, requireUser, USER_COOKIE, ADMIN_COOKIE, getSessionSubject, cookieHeader, clearCookieHeader, createSession, destroySession, parseCookies, loginGuard, loginClear, clientOf } from '../auth';
 import { all, one, run, scalar } from '../db';
 import { getSite } from '../settings';
 import { getDefaultMerchant } from '../merchants';
 import { HttpError, genInviteCode, genOrderNo, genOrderToken, hashPassword, now, pageResult, pager, sha256Hex, verifyPassword } from '../util';
 import type { Level, UserRow } from '../types';
+import { verifyTurnstile } from '../turnstile';
 
 export const auth = new Hono<AppEnv>();
 
@@ -48,6 +49,12 @@ auth.post('/register', async (c) => {
   const site = await getSite(c.env);
   if (!site.allow_register) throw new HttpError(403, '站点已关闭注册');
 
+  await verifyTurnstile(
+    c.env,
+    String(body.turnstile_token ?? body.token ?? '').trim(),
+    c.req.header('cf-connecting-ip'),
+  );
+
   const exists = await scalar<number>(c.env, 'SELECT COUNT(*) AS c FROM users WHERE email = ?', email);
   if (Number(exists) > 0) throw new HttpError(409, '该邮箱已注册');
 
@@ -82,6 +89,11 @@ auth.post('/login', async (c) => {
   const email = String(body.email ?? '').trim().toLowerCase();
   const password = String(body.password ?? '');
   if (!email || !password) throw new HttpError(400, '请输入邮箱和密码');
+  await verifyTurnstile(
+    c.env,
+    String(body.turnstile_token ?? body.token ?? '').trim(),
+    c.req.header('cf-connecting-ip'),
+  );
   const { ip } = clientOf(c);
   loginGuard(`user:${ip}:${email}`);
   const user = await one<UserRow>(c.env, 'SELECT * FROM users WHERE email = ?', email);
@@ -108,6 +120,11 @@ auth.post('/forgot', async (c) => {
   const body = await c.req.json<any>().catch(() => ({}));
   const email = String(body.email ?? '').trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, '邮箱格式不正确');
+  await verifyTurnstile(
+    c.env,
+    String(body.turnstile_token ?? body.token ?? '').trim(),
+    c.req.header('cf-connecting-ip'),
+  );
   const { ip } = clientOf(c);
   loginGuard(`forgot:${ip}`);
 
@@ -170,7 +187,14 @@ auth.post('/reset', async (c) => {
 auth.get('/me', async (c) => {
   const user = c.get('user');
   if (!user) return c.json({ ok: true, data: null });
-  return c.json({ ok: true, data: await publicUser(c.env, user) });
+
+  // 同一浏览器已登录后台时，前台头像菜单显示「进入后台」入口
+  const adminToken = parseCookies(c.req.header('cookie'))[ADMIN_COOKIE];
+  const adminId = await getSessionSubject(c.env, adminToken, 'admin');
+  const data: any = await publicUser(c.env, user);
+  data.is_admin = !!adminId;
+  data.admin_url = adminId ? `/${c.env.ADMIN_PATH || 'admin'}` : null;
+  return c.json({ ok: true, data });
 });
 
 /** 余额充值：生成一张「充值订单」，支付成功后自动加余额 */

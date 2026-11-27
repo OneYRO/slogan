@@ -107,6 +107,7 @@ Slogan 把发卡站需要的商品、卡密、订单、支付、会员、营销�
 
 ### 安全
 - PBKDF2-SHA256 密码哈希（10 万次迭代，Cloudflare Workers Web Crypto 上限）
+- **Cloudflare Turnstile 人机验证**：开启后登录、注册、找回密码均需验证（测试 Key 可在 Cloudflare Dashboard 生成）
 - **管理员两步验证（TOTP / RFC 6238）**，登录需 6 位动态码
 - D1 会话 + HttpOnly Cookie，7 天有效期
 - 登录失败限流、全站写操作限流
@@ -328,22 +329,33 @@ https://你的域名/api/pay/notify/hashpay
 
 另有 Telegram Bot 与通用 Webhook 通知（新订单、支付成功、工单回复）。
 
-### R2 媒体库（可选）
+### R2 媒体库（自动创建）
 
-```bash
-# 1. 创建存储桶
-npx wrangler r2 bucket create slogan-media
-```
-
-在 `wrangler.jsonc` 中取消注释并保持绑定名 `BUCKET`：
+项目已在 `wrangler.jsonc` 声明 R2 绑定，使用 Wrangler 4.45+ 的自动资源供给，**不需要手工建桶或复制 bucket id**：
 
 ```jsonc
 "r2_buckets": [
-  { "binding": "BUCKET", "bucket_name": "slogan-media" }
+  { "binding": "BUCKET" }
 ]
 ```
 
-重新部署后，后台「媒体库」即可上传图片（单文件 5 MB 以内），商品编辑器点「媒体库」可直接选图。未绑定时接口返回 `available: false`，前台仍可使用外链图片，不影响下单。
+首次 `npm run deploy` 时 Wrangler 会自动创建桶并写入绑定。部署后进入后台「媒体库」上传图片（单文件 5 MB 以内），商品编辑器点「媒体库」可直接选图。
+
+如果当前 Cloudflare API Token 没有 R2 编辑权限，构建会无法自动创建桶；此时在 Dashboard → R2 手动创建一个桶，并把绑定补成：
+
+```jsonc
+"r2_buckets": [{ "binding": "BUCKET", "bucket_name": "你的桶名" }]
+```
+
+### Turnstile 人机验证（可选）
+
+后台「安全设置 → Turnstile 人机验证」填写 Cloudflare Turnstile 的 **Site Key / Secret Key**，开启后：
+
+- 前台登录、注册、找回密码都会显示 Turnstile 组件
+- Worker 在 `/api/auth/login`、`/api/auth/register`、`/api/auth/forgot` 服务端校验 token
+- 关闭时完全不请求 Turnstile，不影响现有登录
+
+在 Cloudflare Dashboard → Turnstile 添加站点，域名填当前站点域名（如 `slogan.273890475.workers.dev`），拿到两个 Key 后填入并保存。
 
 ### 上游供应商协议
 

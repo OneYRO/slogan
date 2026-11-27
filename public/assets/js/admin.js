@@ -1485,11 +1485,28 @@
   async function pageSecurity() {
     setCrumb('安全设置', '两步验证');
     setPage('<div class="page-loading" style="text-align:center;padding:100px 0;color:var(--muted)">加载中…</div>');
-    const me = await api('/me');
+    const [me, settings] = await Promise.all([api('/me'), api('/settings')]);
+    const ts = settings.security?.turnstile || { enabled: false, site_key: '', secret_key: '' };
     let secret = '';
     let otpauth = '';
 
     const bind = () => {
+      const saveTurnstile = qs('#saveTurnstile');
+      if (saveTurnstile) saveTurnstile.addEventListener('click', async () => {
+        const enabled = qs('#tsEnabled').checked;
+        const site_key = qs('#tsSiteKey').value.trim();
+        const secret_key = qs('#tsSecretKey').value.trim();
+        if (enabled && (!site_key || !secret_key)) {
+          return toast('启用 Turnstile 前请填写 Site Key 和 Secret Key', 'error');
+        }
+        await api('/settings', {
+          method: 'PUT',
+          body: { section: 'security', data: { turnstile: { enabled, site_key, secret_key } } },
+        });
+        toast('Turnstile 配置已保存', 'success');
+        pageSecurity();
+      });
+
       const changePwd = qs('#changePwd');
       if (changePwd) changePwd.addEventListener('click', async () => {
         const old_password = qs('#oldPwd').value;
@@ -1535,6 +1552,24 @@
         <div class="page-head">
           <div><h1>安全设置</h1><p>为管理员账号开启两步验证（TOTP），登录时需要输入 6 位动态码</p></div>
         </div>
+        <div class="card">
+          <div class="card-title">${icon('lock', 16)} Turnstile 人机验证
+            <span class="badge ${ts.enabled ? 'badge-green' : 'badge-gray'}">${ts.enabled ? '已开启' : '未开启'}</span>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label>启用</label>
+              <label class="switch"><input type="checkbox" id="tsEnabled" ${ts.enabled ? 'checked' : ''}><span class="track"></span><span>登录、注册、找回密码前均需验证</span></label>
+            </div>
+            <div class="field"><label>Site Key</label><input id="tsSiteKey" value="${esc(ts.site_key || '')}" placeholder="0x4AAAAAAA..."></div>
+            <div class="field"><label>Secret Key</label><input id="tsSecretKey" type="password" value="${esc(ts.secret_key || '')}" placeholder="Cloudflare Turnstile Secret Key"></div>
+            <div class="field full">
+              <p class="hint" style="margin:0">在 Cloudflare Dashboard → Turnstile 创建站点，域名填当前站点域名，复制 Site Key / Secret Key。未配置完整前不要开启，否则前台登录会被拦截。</p>
+            </div>
+          </div>
+          <button class="btn btn-primary" id="saveTurnstile" style="margin-top:12px">${icon('check', 15)} 保存 Turnstile 配置</button>
+        </div>
+
         <div class="card">
           <div class="card-title">${icon('lock', 16)} 两步验证
             <span class="badge ${me.totp_enabled ? 'badge-green' : 'badge-gray'}">${me.totp_enabled ? '已开启' : '未开启'}</span>

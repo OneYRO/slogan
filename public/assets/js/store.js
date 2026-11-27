@@ -313,6 +313,7 @@
             <strong>${esc(S.user.email)}</strong>
             <span>${esc(S.user.level_name)} · 余额 ${money(S.user.balance_cents, S.site?.currency_code || 'CNY')}</span>
           </div>
+          ${S.user.is_admin ? `<a href="${esc(S.user.admin_url || '/admin')}" class="admin-entry" data-external="1">${icon('lock', 16)} 进入后台</a>` : ''}
           <a href="/account">${icon('user', 16)} 个人中心</a>
           <a href="/orders">${icon('order', 16)} 我的订单</a>
           <a href="/tickets">${icon('ticket', 16)} 工单中心</a>
@@ -379,7 +380,7 @@
       if (!a) return;
       const href = a.getAttribute('href');
       if (!href || href.startsWith('http') || href.startsWith('//') || href.startsWith('mailto:') || href.startsWith('#') || href.startsWith('javascript')) return;
-      if (a.target === '_blank') return;
+      if (a.target === '_blank' || a.dataset.external) return;
       e.preventDefault();
       navigate(href);
     });
@@ -1218,9 +1219,51 @@
   }
 
   /* ------------------------- 登录注册 ------------------------- */
+  let turnstileScriptPromise = null;
+
+  function loadTurnstileScript() {
+    if (window.turnstile?.render) return Promise.resolve(window.turnstile);
+    if (turnstileScriptPromise) return turnstileScriptPromise;
+    turnstileScriptPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      script.async = true;
+      script.defer = true;
+      script.onload = () => {
+        if (window.turnstile?.render) resolve(window.turnstile);
+        else reject(new Error('Turnstile API 未就绪'));
+      };
+      script.onerror = () => reject(new Error('Turnstile 脚本加载失败'));
+      document.head.appendChild(script);
+    }).catch((error) => {
+      // 允许下一次进入登录页时重试
+      turnstileScriptPromise = null;
+      throw error;
+    });
+    return turnstileScriptPromise;
+  }
+
   async function renderLogin(app) {
     setTitle('登录');
     let mode = 'login';
+    const turnstileOn = !!S.site?.turnstile_enabled;
+    const turnstileSiteKey = S.site?.turnstile_site_key || '';
+    let turnstileWidgetId = null;
+    let turnstileToken = '';
+    const turnstileError = (message) => {
+      const el = qs('#turnstileError');
+      if (!el) return;
+      el.textContent = message;
+      el.hidden = false;
+    };
+    const resetTurnstile = () => {
+      turnstileToken = '';
+      if (turnstileWidgetId !== null && window.turnstile) {
+        try { window.turnstile.reset(turnstileWidgetId); } catch (e) { /* ignore */ }
+      }
+      const el = qs('#turnstileError');
+      if (el) el.hidden = true;
+    };
     app.innerHTML = `
       <div class="auth-wrap">
         <div class="auth-card">
@@ -1236,6 +1279,10 @@
             <div class="field" id="pwdField"><label>密码</label><input id="authPassword" type="password" placeholder="至少 8 位" autocomplete="current-password"></div>
             <div class="field" id="inviteField" hidden><label>邀请码（选填）</label><input id="authInvite" placeholder="好友邀请码"></div>
             <div class="field" id="forgotHint" hidden><p class="muted" style="margin:0">输入注册邮箱，我们会发送一封含重置链接的邮件（30 分钟内有效）。</p></div>
+            ${turnstileOn ? `<div class="turnstile-wrap">
+              <div id="turnstileWidget"></div>
+              <p class="turnstile-error" id="turnstileError" ${turnstileSiteKey ? 'hidden' : ''}>${turnstileSiteKey ? '' : 'Turnstile 未配置 Site Key，请联系管理员'}</p>
+            </div>` : ''}
             <button class="btn btn-primary btn-block btn-lg" id="authSubmit">登录</button>
           </form>
           <div class="auth-foot"><a href="/orders">游客订单查询</a></div>
@@ -1250,18 +1297,63 @@
       qs('#forgotHint').hidden = mode !== 'forgot';
       qs('#authSubmit').textContent = mode === 'login' ? '登录' : mode === 'register' ? '注册并登录' : '发送重置邮件';
       qs('#authPassword').autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+      resetTurnstile();
     }));
+
+    const mountTurnstile = async () => {
+      if (!turnstileOn || !turnstileSiteKey) return;
+      const container = qs('#turnstileWidget');
+      if (!container) return;
+      try {
+        const api = await loadTurnstileScript();
+        if (!qs('#turnstileWidget')) return;
+        turnstileWidgetId = api.render(container, {
+          sitekey: turnstileSiteKey,
+          theme: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
+          callback: (token) => {
+            turnstileToken = token;
+            const el = qs('#turnstileError');
+            if (el) el.hidden = true;
+          },
+          'expired-callback': () => {
+            turnstileToken = '';
+            turnstileError('验证已过期，请重新完成验证');
+          },
+          'error-callback': () => {
+            turnstileToken = '';
+            turnstileError('人机验证加载失败，请刷新页面重试');
+            return true;
+          },
+        });
+        window.setTimeout(() => {
+          const el = qs('#turnstileWidget');
+          if (el && !el.querySelector('iframe')) turnstileError('人机验证加载失败，请刷新页面重试');
+        }, 8000);
+      } catch (e) {
+        turnstileError('人机验证加载失败，请刷新页面重试');
+      }
+    };
+    mountTurnstile();
 
     qs('#authSubmit').addEventListener('click', async () => {
       const email = qs('#authEmail').value.trim();
       const password = qs('#authPassword').value;
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return toast('邮箱格式不正确', 'error');
       if (password.length < 8) return toast('密码至少 8 位', 'error');
+      if (turnstileOn) {
+        if (!turnstileSiteKey) return toast('Turnstile 未配置 Site Key，请联系管理员', 'error');
+        if (!turnstileToken) {
+          turnstileError('请先完成人机验证');
+          return toast('请先完成人机验证', 'error');
+        }
+      }
       const btn = qs('#authSubmit');
       btn.disabled = true;
       try {
         if (mode === 'forgot') {
-          await request('/api/auth/forgot', { method: 'POST', body: { email } });
+          const forgotBody = { email };
+          if (turnstileOn) forgotBody.turnstile_token = turnstileToken;
+          await request('/api/auth/forgot', { method: 'POST', body: forgotBody });
           toast('如果邮箱已注册，重置邮件已发出', 'success');
           btn.disabled = false;
           return;
@@ -1269,12 +1361,14 @@
         const path = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
         const body = { email, password };
         if (mode === 'register') body.invite_code = qs('#authInvite').value.trim();
+        if (turnstileOn) body.turnstile_token = turnstileToken;
         S.user = await request(path, { method: 'POST', body });
         toast(mode === 'login' ? '登录成功' : '注册成功', 'success');
         renderUserArea();
         navigate('/account');
       } catch (e) {
         btn.disabled = false;
+        if (turnstileOn) resetTurnstile();
       }
     });
   }

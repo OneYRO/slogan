@@ -14,7 +14,7 @@ import {
 } from '../auth';
 import { all, one, run, scalar, batch } from '../db';
 import { closeOrder, loadOrderDetail, publicOrder } from '../orders';
-import { getCommission, getNotify, getPayment, getSite, setSetting } from '../settings';
+import { getCommission, getNotify, getPayment, getSecurity, getSite, setSetting } from '../settings';
 import { sendMail, sendTest, renderTemplate } from '../notify';
 import {
   HttpError,
@@ -1549,6 +1549,7 @@ admin.put('/merchant/profile', async (c) => {
 /* ---------------------------- 设置 ---------------------------- */
 
 const SECRET_FIELDS: Record<string, string[]> = {
+  security: ['turnstile.secret_key'],
   payment: ['epay.key', 'alipay.private_key', 'usdt.app_secret', 'stripe.secret_key', 'stripe.webhook_secret', 'paypal.client_secret', 'hashpay.api_key', 'hashpay.signing_secret'],
   notify: ['email.password', 'telegram.bot_token'],
 };
@@ -1586,11 +1587,12 @@ function mergeKeepingSecrets(section: string, current: any, incoming: any) {
 }
 
 admin.get('/settings', async (c) => {
-  const [site, payment, notify, commission] = await Promise.all([
+  const [site, payment, notify, commission, security] = await Promise.all([
     getSite(c.env),
     getPayment(c.env),
     getNotify(c.env),
     getCommission(c.env),
+    getSecurity(c.env),
   ]);
   return c.json({
     ok: true,
@@ -1599,6 +1601,7 @@ admin.get('/settings', async (c) => {
       payment: maskSecrets('payment', payment),
       notify: maskSecrets('notify', notify),
       commission,
+      security: maskSecrets('security', security),
     },
   });
 });
@@ -1606,7 +1609,7 @@ admin.get('/settings', async (c) => {
 admin.put('/settings', async (c) => {
   const b = await c.req.json<any>();
   const section = String(b.section ?? '');
-  assert(['site', 'payment', 'notify', 'commission'].includes(section), 400, '未知的配置分组');
+  assert(['site', 'payment', 'notify', 'commission', 'security'].includes(section), 400, '未知的配置分组');
   if (section === 'site') {
     const cur = await getSite(c.env);
     const next = { ...cur, ...(b.data || {}) };
@@ -1628,6 +1631,20 @@ admin.put('/settings', async (c) => {
       enabled: !!data.enabled,
       levels: Array.isArray(data.levels) ? data.levels.slice(0, 3).map((n: any) => Number(n) || 0) : [10, 5, 2],
     });
+  } else if (section === 'security') {
+    const cur = await getSecurity(c.env);
+    const next = mergeKeepingSecrets('security', cur, b.data || {});
+    next.turnstile = {
+      enabled: !!(b.data?.turnstile?.enabled),
+      site_key: String(b.data?.turnstile?.site_key ?? '').trim(),
+      secret_key: String(next.turnstile?.secret_key ?? cur.turnstile.secret_key ?? '').trim(),
+    };
+    assert(
+      !next.turnstile.enabled || (next.turnstile.site_key && next.turnstile.secret_key),
+      400,
+      '启用 Turnstile 前必须填写 Site Key 和 Secret Key',
+    );
+    await setSetting(c.env, 'security', next);
   }
   await audit(c, '修改设置', section);
   return c.json({ ok: true });

@@ -1,4 +1,4 @@
-import type { CommissionConfig, Env, NotifyConfig, PaymentConfig, SiteConfig } from './types';
+import type { CommissionConfig, Env, NotifyConfig, PaymentConfig, SecurityConfig, SiteConfig } from './types';
 import { one, run } from './db';
 import { parseJSON } from './util';
 
@@ -108,11 +108,20 @@ export const DEFAULT_COMMISSION: CommissionConfig = {
   levels: [10, 5, 2],
 };
 
+export const DEFAULT_SECURITY: SecurityConfig = {
+  turnstile: {
+    enabled: false,
+    site_key: '',
+    secret_key: '',
+  },
+};
+
 const DEFAULTS: Record<string, unknown> = {
   site: DEFAULT_SITE,
   payment: DEFAULT_PAYMENT,
   notify: DEFAULT_NOTIFY,
   commission: DEFAULT_COMMISSION,
+  security: DEFAULT_SECURITY,
 };
 
 function deepMerge<T>(def: T, patch: any): T {
@@ -160,6 +169,10 @@ export async function getNotify(env: Env): Promise<NotifyConfig> {
 
 export async function getCommission(env: Env): Promise<CommissionConfig> {
   return getSetting<CommissionConfig>(env, 'commission');
+}
+
+export async function getSecurity(env: Env): Promise<SecurityConfig> {
+  return getSetting<SecurityConfig>(env, 'security');
 }
 
 /** 前台可见的站点配置（过滤敏感字段） */

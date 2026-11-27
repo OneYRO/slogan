@@ -199,6 +199,8 @@ export interface SiteConfig {
   min_amount_cents: number;
   stock_alert: number;
   custom_head: string;
+  turnstile_enabled?: boolean;
+  turnstile_site_key?: string;
 }
 
 export interface PaymentConfig {
@@ -272,4 +274,12 @@ export interface NotifyConfig {
 export interface CommissionConfig {
   enabled: boolean;
   levels: number[];
+}
+
+export interface SecurityConfig {
+  turnstile: {
+    enabled: boolean;
+    site_key: string;
+    secret_key: string;
+  };
 }
