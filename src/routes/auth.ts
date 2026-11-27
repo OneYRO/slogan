@@ -241,6 +241,56 @@ auth.post('/recharge', requireUser, async (c) => {
   return c.json({ ok: true, data: { order_no: orderNo, token, amount_cents: amount } });
 });
 
+/** 兑换码：一次使用，直接增加账户余额 */
+auth.post('/redeem', requireUser, async (c) => {
+  const body = await c.req.json<any>().catch(() => ({}));
+  const code = String(body.code ?? '').trim().toUpperCase();
+  if (!/^[A-Z0-9_-]{4,40}$/.test(code)) throw new HttpError(400, '兑换码格式不正确');
+  const user = c.get('user');
+  loginGuard(`redeem:${user.id}:${clientOf(c).ip}`, 10, 15 * 60 * 1000);
+  const row = await one<any>(
+    c.env,
+    'SELECT * FROM redeem_codes WHERE code = ? AND status = ?',
+    code,
+    'unused',
+  );
+  if (!row) throw new HttpError(400, '兑换码无效或已使用');
+  if (row.expires_at && Number(row.expires_at) <= Date.now()) throw new HttpError(400, '兑换码已过期');
+  if (row.amount_cents <= 0) throw new HttpError(400, '兑换码金额异常');
+
+  const ts = now();
+  const claimed = await run(
+    c.env,
+    'UPDATE redeem_codes SET status = ?, used_by = ?, used_at = ? WHERE id = ? AND status = ?',
+    'used',
+    user.id,
+    ts,
+    row.id,
+    'unused',
+  );
+  if ((claimed.meta.changes ?? 0) !== 1) throw new HttpError(409, '该兑换码已被使用');
+
+  const credited = await run(
+    c.env,
+    'UPDATE users SET balance_cents = balance_cents + ? WHERE id = ?',
+    row.amount_cents,
+    user.id,
+  );
+  if ((credited.meta.changes ?? 0) !== 1) throw new HttpError(500, '余额入账失败，请联系客服');
+  const fresh = await one<UserRow>(c.env, 'SELECT * FROM users WHERE id = ?', user.id);
+  await run(
+    c.env,
+    `INSERT INTO balance_logs (user_id, type, amount_cents, balance_after, note, created_at)
+     VALUES (?, 'redeem', ?, ?, ?, ?)`,
+    user.id,
+    row.amount_cents,
+    fresh?.balance_cents ?? 0,
+    `兑换码 ${code}`,
+    ts,
+  );
+  return c.json({ ok: true, data: { amount_cents: row.amount_cents, balance_cents: fresh?.balance_cents ?? 0 } });
+});
+
 auth.get('/balance-logs', requireUser, async (c) => {
   const user = c.get('user');
   const url = new URL(c.req.url);

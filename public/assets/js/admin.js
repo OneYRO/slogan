@@ -126,6 +126,7 @@
       { key: 'cards', name: '卡密管理', icon: 'gift' },
       { key: 'suppliers', name: '上游供应商', icon: 'box' },
       { key: 'coupons', name: '优惠券', icon: 'ticket' },
+      { key: 'redeem', name: '兑换码', icon: 'wallet' },
     ] },
     { group: '用户', items: [
       { key: 'users', name: '用户管理', icon: 'user' },
@@ -227,7 +228,7 @@
     if (!ME) return;
     const hash = location.hash.replace(/^#\/?/, '') || 'dashboard';
     const [page, arg] = hash.split('/');
-    const rootOnly = ['suppliers', 'users', 'levels', 'merchants', 'payments', 'security', 'notify', 'media', 'templates', 'settings', 'logs'];
+    const rootOnly = ['suppliers', 'redeem', 'users', 'levels', 'merchants', 'payments', 'security', 'notify', 'media', 'templates', 'settings', 'logs'];
     if (ME.merchant_id && rootOnly.includes(page)) {
       location.hash = '#/dashboard';
       return;
@@ -246,6 +247,7 @@
         case 'suppliers': return pageSuppliers();
         case 'orders': return pageOrders();
         case 'coupons': return pageCoupons();
+        case 'redeem': return pageRedeemCodes();
         case 'users': return pageUsers();
         case 'levels': return pageLevels();
         case 'tickets': return pageTickets();
@@ -1019,6 +1021,93 @@
       if (!(await confirmDialog('确定删除该优惠券？', { danger: true }))) return;
       await api(`/coupons/${b.dataset.del}`, { method: 'DELETE' });
       pageCoupons();
+    }));
+  }
+
+  /* ================= 兑换码 ================= */
+  async function pageRedeemCodes() {
+    setCrumb('兑换码', '营销');
+    setPage('<div class="page-loading" style="text-align:center;padding:100px 0;color:var(--muted)">加载中…</div>');
+    const data = await api('/redeem-codes');
+    const list = data.list || [];
+    const stats = data.stats || {};
+    const statusBadge = (r) => {
+      if (r.status === 'used') return '<span class="badge badge-red">已使用</span>';
+      if (r.status === 'disabled') return '<span class="badge badge-gray">已停用</span>';
+      if (r.expires_at && Number(r.expires_at) <= Date.now()) return '<span class="badge badge-orange">已过期</span>';
+      return '<span class="badge badge-green">未使用</span>';
+    };
+    setPage(`
+      <div class="page-head">
+        <div><h1>兑换码</h1><p>生成一次性余额兑换码，用户在前台输入后余额立即到账</p></div>
+        <div class="actions"><button class="btn btn-primary" id="addRedeem">${icon('plus', 15)} 生成兑换码</button></div>
+      </div>
+      <div class="stat-grid" style="margin-bottom:18px">
+        <div class="stat"><div class="ico">${icon('ticket', 18)}</div><div class="label">兑换码总数</div><div class="value">${stats.total || 0}</div></div>
+        <div class="stat"><div class="ico green">${icon('wallet', 18)}</div><div class="label">待兑换金额</div><div class="value">${money(stats.available_amount_cents || 0)}</div></div>
+        <div class="stat"><div class="ico">${icon('check', 18)}</div><div class="label">已兑换金额</div><div class="value">${money(stats.used_amount_cents || 0)}</div></div>
+      </div>
+      <div class="card"><div class="table-wrap"><table class="table">
+        <thead><tr><th>兑换码</th><th class="num">金额</th><th>状态</th><th>使用人</th><th>有效期</th><th>创建时间</th><th>备注</th><th style="text-align:right">操作</th></tr></thead>
+        <tbody>${list.map((r) => `<tr>
+          <td><span class="code">${esc(r.code)}</span></td>
+          <td class="num">${money(r.amount_cents)}</td>
+          <td>${statusBadge(r)}</td>
+          <td class="muted">${esc(r.used_by_email || '—')}${r.used_at ? `<div style="font-size:11px">${date(r.used_at)}</div>` : ''}</td>
+          <td class="muted">${r.expires_at ? date(r.expires_at, false) : '长期'}</td>
+          <td class="muted">${date(r.created_at)}</td>
+          <td class="muted">${esc(r.note || '—')}</td>
+          <td><div class="actions">
+            <button class="btn btn-ghost btn-xs" data-copy-redeem="${esc(r.code)}">${icon('copy', 12)} 复制</button>
+            ${r.status !== 'used' ? `<button class="btn btn-soft btn-xs" data-toggle-redeem="${r.id}" data-status="${r.status}">${r.status === 'disabled' ? '启用' : '停用'}</button>` : ''}
+          </div></td>
+        </tr>`).join('') || `<tr><td colspan="8">${emptyBlock('🎟️', '还没有兑换码', '生成一批兑换码，用于活动或余额充值')}</td></tr>`}</tbody>
+      </table></div></div>`);
+
+    qsa('[data-copy-redeem]').forEach((b) => b.addEventListener('click', () => copyText(b.dataset.copyRedeem)));
+    qsa('[data-toggle-redeem]').forEach((b) => b.addEventListener('click', async () => {
+      const next = b.dataset.status === 'disabled' ? 'unused' : 'disabled';
+      if (next === 'disabled' && !(await confirmDialog('停用后该兑换码将无法使用，确定继续？', { danger: true }))) return;
+      await api(`/redeem-codes/${b.dataset.toggleRedeem}`, { method: 'PUT', body: { status: next } });
+      pageRedeemCodes();
+    }));
+
+    qs('#addRedeem').addEventListener('click', () => openForm({
+      title: '生成兑换码',
+      width: 600,
+      fields: [
+        { key: 'amount', label: '每个兑换码金额（元）', type: 'number', required: true, default: 10 },
+        { key: 'quantity', label: '生成数量（1-200）', type: 'number', default: 10 },
+        { key: 'prefix', label: '前缀（可选）', placeholder: '例如 NOV，留空则无前缀' },
+        { key: 'expires_at', label: '有效期（可选）', type: 'datetime' },
+        { key: 'note', label: '备注', placeholder: '例如 双十一活动 / 客服补偿' },
+      ],
+      onSubmit: async (v) => {
+        const result = await api('/redeem-codes', {
+          method: 'POST',
+          body: {
+            amount_cents: Math.round(Number(v.amount) * 100),
+            quantity: Number(v.quantity),
+            prefix: v.prefix || '',
+            expires_at: v.expires_at || null,
+            note: v.note || '',
+          },
+        });
+        toast(`已生成 ${result.quantity} 个兑换码`, 'success');
+        // openForm 在 onSubmit 返回后会关闭当前弹窗；等它关闭后再展示生成结果
+        setTimeout(() => {
+          const modal = openModal({
+            title: '兑换码已生成',
+            width: 560,
+            body: `<p style="font-size:13px;color:var(--muted);margin:0 0 12px">每个兑换码可兑换 ${money(result.amount_cents)}，仅可使用一次。</p>
+              <textarea id="generatedCodes" readonly rows="10" style="font-family:monospace">${esc((result.codes || []).join('\n'))}</textarea>`,
+            footer: `<button class="btn btn-primary" id="copyGeneratedCodes">${icon('copy', 15)} 复制全部</button>
+                     <button class="btn btn-ghost" data-modal-close="1">关闭</button>`,
+          });
+          qs('#copyGeneratedCodes', modal.el).addEventListener('click', () => copyText((result.codes || []).join('\n')));
+          pageRedeemCodes();
+        }, 0);
+      },
     }));
   }
 

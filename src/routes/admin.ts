@@ -152,6 +152,7 @@ for (const p of [
   '/users', '/users/*',
   '/levels', '/levels/*',
   '/suppliers', '/suppliers/*',
+  '/redeem-codes', '/redeem-codes/*',
   '/merchants', '/merchants/*',
 ]) {
   admin.use(p, requireRoot);
@@ -988,6 +989,78 @@ admin.post('/orders/:id/resend', async (c) => {
   const { notifyOrderPaid } = await import('../notify');
   await notifyOrderPaid(c.env, detail.order, items);
   await audit(c, '补发邮件', detail.order.order_no);
+  return c.json({ ok: true });
+});
+
+/* ---------------------------- 兑换码 ---------------------------- */
+
+admin.get('/redeem-codes', async (c) => {
+  const list = await all<any>(
+    c.env,
+    `SELECT r.*, u.email AS used_by_email, a.username AS created_by_name
+     FROM redeem_codes r
+     LEFT JOIN users u ON u.id = r.used_by
+     LEFT JOIN admins a ON a.id = r.created_by
+     ORDER BY r.id DESC LIMIT 300`,
+  );
+  const stats = await one<any>(
+    c.env,
+    `SELECT COUNT(*) AS total,
+       COALESCE(SUM(CASE WHEN status = 'used' THEN amount_cents ELSE 0 END), 0) AS used_amount_cents,
+       COALESCE(SUM(CASE WHEN status = 'unused' AND (expires_at IS NULL OR expires_at > ?) THEN amount_cents ELSE 0 END), 0) AS available_amount_cents
+     FROM redeem_codes`,
+    now(),
+  );
+  return c.json({ ok: true, data: { list, stats } });
+});
+
+admin.post('/redeem-codes', async (c) => {
+  const b = await c.req.json<any>().catch(() => ({}));
+  const amountCents = Math.round(Number(b.amount_cents ?? 0));
+  assert(Number.isFinite(amountCents) && amountCents > 0, 400, '请输入有效的兑换金额');
+  assert(amountCents <= 100000000, 400, '单个兑换码金额过高');
+  const quantity = Math.min(200, Math.max(1, toInt(b.quantity, 1)));
+  const prefix = String(b.prefix ?? '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 8);
+  const note = String(b.note ?? '').trim().slice(0, 120) || null;
+  const expiresAt = intOrNull(b.expires_at);
+  const ts = now();
+  if (expiresAt && expiresAt <= ts) throw new HttpError(400, '有效期必须晚于当前时间');
+  const codes: string[] = [];
+  for (let i = 0; i < quantity; i++) {
+    let code = '';
+    for (let attempt = 0; attempt < 8; attempt++) {
+      code = `${prefix}${randomBase32(6)}`;
+      const exists = await one(c.env, 'SELECT id FROM redeem_codes WHERE code = ?', code);
+      if (!exists) break;
+      code = '';
+    }
+    assert(code, 500, '兑换码生成失败，请重试');
+    await run(
+      c.env,
+      `INSERT INTO redeem_codes (code, amount_cents, status, note, created_by, expires_at, created_at)
+       VALUES (?, ?, 'unused', ?, ?, ?, ?)`,
+      code,
+      amountCents,
+      note,
+      c.get('admin')?.id ?? null,
+      expiresAt || null,
+      ts,
+    );
+    codes.push(code);
+  }
+  await audit(c, '生成兑换码', `${quantity} 个 · ${centsToYuan(amountCents)} 元/个`);
+  return c.json({ ok: true, data: { codes, amount_cents: amountCents, quantity } });
+});
+
+admin.put('/redeem-codes/:id', async (c) => {
+  const id = Number(c.req.param('id'));
+  const row = await one<any>(c.env, 'SELECT * FROM redeem_codes WHERE id = ?', id);
+  assert(row, 404, '兑换码不存在');
+  assert(row.status !== 'used', 400, '已使用的兑换码不能修改状态');
+  const status = String((await c.req.json<any>().catch(() => ({}))).status ?? '');
+  assert(['unused', 'disabled'].includes(status), 400, '无效的兑换码状态');
+  await run(c.env, 'UPDATE redeem_codes SET status = ? WHERE id = ? AND status != ?', status, id, 'used');
+  await audit(c, status === 'disabled' ? '停用兑换码' : '启用兑换码', row.code);
   return c.json({ ok: true });
 });
 

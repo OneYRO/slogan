@@ -45,6 +45,8 @@
       '登录': '登入', '注册': '註冊', '找回密码': '找回密碼', '邮箱': '信箱', '密码': '密碼', '游客订单查询': '訪客訂單查詢',
       '新建工单': '新建工單', '暂无工单': '暫無工單', '处理中': '處理中', '客服已回复': '客服已回覆', '已关闭': '已關閉',
       '加载中': '載入中', '复制': '複製', '已复制': '已複製', '提交': '提交', '取消': '取消', '保存': '儲存',
+      '兑换码': '兌換碼', '兑换码充值': '兌換碼儲值', '输入兑换码，余额立即到账': '輸入兌換碼，餘額立即到帳',
+      '当前账户余额': '目前帳戶餘額', '立即兑换': '立即兌換', '最近兑换': '最近兌換', '请输入兑换码': '請輸入兌換碼',
       '已支付': '已支付', '待支付': '待支付', '已完成': '已完成', '已退款': '已退款', '待发货': '待發貨', '配送中': '配送中',
     },
     en: {
@@ -70,6 +72,8 @@
       '登录': 'Log in', '注册': 'Sign up', '找回密码': 'Forgot password', '邮箱': 'Email', '密码': 'Password', '游客订单查询': 'Guest order lookup',
       '新建工单': 'New ticket', '暂无工单': 'No tickets', '处理中': 'Open', '客服已回复': 'Replied', '已关闭': 'Closed',
       '加载中': 'Loading', '复制': 'Copy', '已复制': 'Copied', '提交': 'Submit', '取消': 'Cancel', '保存': 'Save',
+      '兑换码': 'Redeem code', '兑换码充值': 'Redeem balance', '输入兑换码，余额立即到账': 'Enter a redeem code to top up instantly',
+      '当前账户余额': 'Current balance', '立即兑换': 'Redeem now', '最近兑换': 'Recent redemptions', '请输入兑换码': 'Enter a redeem code',
       '已支付': 'Paid', '待支付': 'Unpaid', '已完成': 'Completed', '已退款': 'Refunded', '待发货': 'To ship', '配送中': 'Shipping',
     },
   };
@@ -316,6 +320,7 @@
           ${S.user.is_admin ? `<a href="${esc(S.user.admin_url || '/admin')}" class="admin-entry" data-external="1">${icon('lock', 16)} 进入后台</a>` : ''}
           <a href="/account">${icon('user', 16)} 个人中心</a>
           <a href="/orders">${icon('order', 16)} 我的订单</a>
+          <a href="/redeem">${icon('ticket', 16)} 兑换码</a>
           <a href="/tickets">${icon('ticket', 16)} 工单中心</a>
           <button id="logoutBtn">${icon('logout', 16)} 退出登录</button>
         </div>
@@ -500,6 +505,7 @@
       if (parts[0] === 'login') return renderLogin(app);
       if (parts[0] === 'reset') return renderReset(app);
       if (parts[0] === 'account') return renderAccount(app);
+      if (parts[0] === 'redeem') return renderRedeem(app);
       if (parts[0] === 'tickets') return renderTickets(app);
       if (parts[0] === 'ticket' && parts[1]) return renderTicket(app, parts[1]);
       return render404(app);
@@ -1437,6 +1443,7 @@
               <div class="level-bar"><i style="width:${progress}%"></i></div>
             </div>` : `<div style="font-size:11.5px;color:var(--muted);margin-top:12px">已是最高等级</div>`}
             <button class="btn btn-primary btn-block" id="rechargeBtn" style="margin-top:16px">${icon('wallet', 16)} 余额充值</button>
+            <a class="btn btn-ghost btn-block" href="/redeem" style="margin-top:8px">${icon('ticket', 16)} 兑换码充值</a>
             <div style="font-size:11.5px;color:var(--muted);margin:14px 0 6px">我的邀请码</div>
             <div class="invite-box">
               <input id="inviteCode" readonly value="${esc(u.invite_code)}">
@@ -1462,7 +1469,7 @@
           <div class="card">
             <h2 class="card-title">${icon('wallet', 17)} 余额明细</h2>
             ${logs.list.length ? logs.list.map((l) => `
-              <div class="summary-line"><span>${esc(({ recharge: '余额充值', consume: '消费', refund: '退款', commission: '推广返佣', adjust: '管理员调整' })[l.type] || l.type)}${l.note ? ' · ' + esc(l.note) : ''}<br>
+              <div class="summary-line"><span>${esc(({ recharge: '余额充值', redeem: '兑换码', consume: '消费', refund: '退款', commission: '推广返佣', adjust: '管理员调整' })[l.type] || l.type)}${l.note ? ' · ' + esc(l.note) : ''}<br>
                 <span style="font-size:11px;color:var(--muted)">${date(l.created_at)}</span></span>
                 <span style="color:${l.amount_cents >= 0 ? 'var(--success)' : 'var(--danger)'};font-weight:600">${l.amount_cents >= 0 ? '+' : ''}${money(l.amount_cents, S.site?.currency_code || 'CNY')}</span></div>`).join('') : '<p style="color:var(--muted);font-size:13px">暂无记录</p>'}
           </div>
@@ -1512,6 +1519,74 @@
         else if (pay.action.type === 'paid') navigate(pay.action.redirect);
       });
     });
+  }
+
+  /* ------------------------- 兑换码 ------------------------- */
+  async function renderRedeem(app) {
+    if (!S.user) return navigate('/login', true);
+    setTitle('兑换码');
+    const u = S.user;
+    const logs = await request('/api/auth/balance-logs').catch(() => ({ list: [] }));
+    const redeemLogs = (logs.list || []).filter((l) => l.type === 'redeem').slice(0, 5);
+    const historyHtml = (items) => items.length ? items.map((l) => `<div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--border)">
+          <div><div style="font-size:13px">${esc(l.note || '兑换码兑换')}</div><div style="font-size:11px;color:var(--muted);margin-top:3px">${date(l.created_at)}</div></div>
+          <div style="color:var(--success);font-weight:600;white-space:nowrap">+${money(l.amount_cents, S.site?.currency_code || 'CNY')}</div>
+        </div>`).join('') : '<p style="color:var(--muted);font-size:13px;margin:0">还没有兑换记录，输入上方兑换码即可充值。</p>';
+    app.innerHTML = `
+      <div class="page-head"><h1>兑换码</h1><p>输入兑换码，余额立即到账</p></div>
+      <div class="card" style="max-width:820px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:4px 0 16px;border-bottom:1px solid var(--border);margin-bottom:18px">
+          <div><div style="font-size:12px;color:var(--muted);margin-bottom:4px">当前账户余额</div>
+            <div id="redeemBalance" style="font-size:24px;font-weight:700;color:var(--brand)">${money(u.balance_cents, S.site?.currency_code || 'CNY')}</div></div>
+          <div style="width:44px;height:44px;border-radius:12px;background:var(--brand-soft);display:grid;place-items:center;color:var(--brand)">${icon('ticket', 22)}</div>
+        </div>
+        <div class="field">
+          <label>兑换码</label>
+          <input id="redeemCode" placeholder="请输入兑换码" maxlength="40" autocomplete="off" spellcheck="false" style="text-transform:uppercase;font-family:monospace;letter-spacing:1px">
+        </div>
+        <button class="btn btn-primary btn-block" id="redeemSubmit" style="margin-top:16px">${icon('wallet', 16)} 立即兑换</button>
+        <div id="redeemResult" style="margin-top:14px"></div>
+        <p style="font-size:12px;color:var(--muted);line-height:1.7;margin:16px 0 0">
+          每个兑换码仅可使用一次，兑换成功后余额直接计入当前账号，不支持转赠或提现。<br>
+          如兑换码无效、已使用或已过期，请联系客服并提供兑换码。
+        </p>
+      </div>
+      <div class="card" style="max-width:820px">
+        <h2 class="card-title">${icon('clock', 17)} 最近兑换</h2>
+        <div id="recentRedeem">${historyHtml(redeemLogs)}</div>
+      </div>`;
+
+    const submit = async () => {
+      const input = qs('#redeemCode');
+      const btn = qs('#redeemSubmit');
+      const code = input.value.trim().toUpperCase();
+      if (!code) return toast('请输入兑换码', 'error');
+      btn.disabled = true;
+      try {
+        const r = await request('/api/auth/redeem', { method: 'POST', body: { code } });
+        S.user.balance_cents = r.balance_cents;
+        qs('#redeemBalance').textContent = money(r.balance_cents, S.site?.currency_code || 'CNY');
+        renderUserArea();
+        input.value = '';
+        qs('#redeemResult').innerHTML = `<div class="card" style="background:var(--success-soft);border-color:var(--success);padding:14px 16px">
+          <strong style="color:var(--success)">兑换成功 +${money(r.amount_cents, S.site?.currency_code || 'CNY')}</strong>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px">当前余额 ${money(r.balance_cents, S.site?.currency_code || 'CNY')}</div>
+        </div>`;
+        request('/api/auth/balance-logs').then((fresh) => {
+          const items = (fresh.list || []).filter((l) => l.type === 'redeem').slice(0, 5);
+          const el = qs('#recentRedeem');
+          if (el) el.innerHTML = historyHtml(items);
+        }).catch(() => {});
+        toast('兑换成功，余额已到账', 'success');
+      } catch (e) {
+        qs('#redeemResult').innerHTML = `<div style="color:var(--danger);font-size:12.5px">${esc(e.message || '兑换失败')}</div>`;
+      } finally {
+        btn.disabled = false;
+      }
+    };
+    qs('#redeemSubmit').addEventListener('click', submit);
+    qs('#redeemCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+    qs('#redeemCode').focus();
   }
 
   /* ------------------------- 工单 ------------------------- */
