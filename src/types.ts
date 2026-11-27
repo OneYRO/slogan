@@ -282,4 +282,8 @@ export interface SecurityConfig {
     site_key: string;
     secret_key: string;
   };
+  upstream: {
+    enabled: boolean;
+    api_key: string;
+  };
 }

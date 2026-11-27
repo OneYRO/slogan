@@ -17,7 +17,7 @@ interface SupplierProduct {
   auto_purchase: number;
 }
 
-async function hmacSha256(secret: string, text: string): Promise<string> {
+export async function hmacSha256(secret: string, text: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(secret),

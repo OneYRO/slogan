@@ -1301,12 +1301,63 @@
   async function pageSuppliers() {
     setCrumb('上游供应商', '自动采购');
     setPage('<div class="page-loading" style="text-align:center;padding:100px 0;color:var(--muted)">加载中…</div>');
-    const [list, logs] = await Promise.all([api('/suppliers'), api('/suppliers/logs').catch(() => [])]);
+    const [list, logs, provider] = await Promise.all([
+      api('/suppliers'),
+      api('/suppliers/logs').catch(() => []),
+      api('/suppliers/provider').catch(() => ({ enabled: false, api_key: '', endpoint: '', goods: [], orders: [] })),
+    ]);
 
     const render = () => setPage(`
       <div class="page-head">
         <div><h1>上游供应商</h1><p>商品卡密不足时自动向上游采购，采购记录可追溯</p></div>
         <div class="actions"><button class="btn btn-primary" id="addSupplier">${icon('plus', 15)} 添加供应商</button></div>
+      </div>
+      <div class="card">
+        <div class="card-title">${icon('box', 16)} 我的上游接口 <span class="badge ${provider.enabled ? 'badge-green' : 'badge-gray'}">${provider.enabled ? '已启用' : '未启用'}</span></div>
+        <p class="muted" style="font-size:12.5px;margin:-2px 0 14px;line-height:1.7">其他 Slogan 站点可以在「上游供应商」里填这个地址和 API Key，商品的上游商品 ID 用下方列表中的 goods_id。</p>
+        <div class="form-grid">
+          <div class="field"><label>接口地址</label>
+            <div style="display:flex;gap:8px"><input id="providerEndpoint" readonly value="${esc(provider.endpoint || '')}">
+              <button class="btn btn-ghost btn-sm" data-copy-provider="${esc(provider.endpoint || '')}">${icon('copy', 13)}</button></div>
+          </div>
+          <div class="field"><label>API Key</label>
+            <div style="display:flex;gap:8px"><input id="providerKey" value="${esc(provider.api_key || '')}" placeholder="留空并启用时自动生成">
+              <button class="btn btn-ghost btn-sm" id="copyProviderKey">${icon('copy', 13)}</button></div>
+          </div>
+        </div>
+        <div class="form-grid" style="align-items:end;margin-top:4px">
+          <div class="field"><label>接口状态</label>
+            <label class="switch"><input type="checkbox" id="providerEnabled" ${provider.enabled ? 'checked' : ''}><span class="track"></span><span>允许其他 Slogan 站点采购本站卡密</span></label>
+          </div>
+          <div class="actions" style="justify-content:flex-end">
+            <button class="btn btn-ghost btn-sm" id="regenProvider">重新生成 Key</button>
+            <button class="btn btn-primary btn-sm" id="saveProvider">${icon('check', 14)} 保存接口配置</button>
+          </div>
+        </div>
+        <div class="card-title" style="margin-top:24px">${icon('gift', 16)} 可供货商品 <span class="badge badge-gray">${(provider.goods || []).length}</span></div>
+        ${(provider.goods || []).length ? `<div class="table-wrap"><table class="table">
+          <thead><tr><th>上游商品 ID</th><th>商品 / 规格</th><th class="num">供货价</th><th class="num">可售库存</th><th>类型</th><th style="text-align:right">操作</th></tr></thead>
+          <tbody>${(provider.goods || []).map((g) => `<tr>
+            <td><span class="code">${esc(g.goods_id)}</span></td>
+            <td>${esc(g.name)}</td>
+            <td class="num">${money(g.price_cents)}</td>
+            <td class="num">${g.stock}</td>
+            <td><span class="badge badge-gray">${esc(g.type)}</span></td>
+            <td><button class="btn btn-ghost btn-xs" data-copy-provider="${esc(g.goods_id)}">${icon('copy', 12)} 复制 ID</button></td>
+          </tr>`).join('')}</tbody>
+        </table></div>` : '<p class="muted" style="font-size:12.5px;margin:0">还没有可供货的自动卡密商品；先创建商品并导入卡密。</p>'}
+        <div class="card-title" style="margin-top:24px">${icon('clock', 16)} 最近上游出货 <span class="badge badge-gray">${(provider.orders || []).length}</span></div>
+        ${(provider.orders || []).length ? `<div class="table-wrap"><table class="table">
+          <thead><tr><th>时间</th><th>对方订单号</th><th>商品</th><th class="num">数量</th><th class="num">供货金额</th><th>状态</th></tr></thead>
+          <tbody>${(provider.orders || []).map((o) => `<tr>
+            <td class="muted">${date(o.created_at)}</td>
+            <td class="code">${esc(o.remote_order_no || '—')}</td>
+            <td><span class="code">${esc(o.goods_id)}</span></td>
+            <td class="num">${o.qty}</td>
+            <td class="num">${money(o.cost_cents)}</td>
+            <td>${o.status === 'success' ? '<span class="badge badge-green">成功</span>' : '<span class="badge badge-red">失败</span>'}</td>
+          </tr>`).join('')}</tbody>
+        </table></div>` : '<p class="muted" style="font-size:12.5px;margin:0">还没有其他站点从这里采购。</p>'}
       </div>
       <div class="card">
         <div class="card-title">${icon('box', 16)} 供应商列表 <span class="badge badge-gray">${list.length}</span></div>
@@ -1376,6 +1427,22 @@
       });
     };
 
+    qsa('[data-copy-provider]').forEach((b) => b.addEventListener('click', () => copyText(b.dataset.copyProvider)));
+    qs('#copyProviderKey').addEventListener('click', () => copyText(qs('#providerKey').value.trim()));
+    qs('#saveProvider').addEventListener('click', async () => {
+      await api('/suppliers/provider', {
+        method: 'PUT',
+        body: { enabled: qs('#providerEnabled').checked, api_key: qs('#providerKey').value.trim() },
+      });
+      toast('上游接口配置已保存', 'success');
+      pageSuppliers();
+    });
+    qs('#regenProvider').addEventListener('click', async () => {
+      if (!(await confirmDialog('重新生成后旧 Key 立即失效，确定继续？', { danger: true }))) return;
+      await api('/suppliers/provider', { method: 'PUT', body: { enabled: qs('#providerEnabled').checked, regenerate: true } });
+      toast('已生成新的 API Key', 'success');
+      pageSuppliers();
+    });
     qs('#addSupplier').addEventListener('click', () => openForm());
     qsa('[data-edit]').forEach((b) => b.addEventListener('click', () => openForm(list.find((x) => String(x.id) === b.dataset.edit))));
     qsa('[data-del]').forEach((b) => b.addEventListener('click', async () => {

@@ -99,6 +99,7 @@ Slogan 把发卡站需要的商品、卡密、订单、支付、会员、营销�
 - 通用采购协议：`POST {api_url}`，HMAC-SHA256 签名 `${order_no}|${goods_id}|${qty}|${ts}`，请求头 `X-Api-Key` / `X-Timestamp` / `X-Sign`
 - 采购结果写入 `supplier_orders`，上游卡密以已售状态入库并补发；余额与成本自动扣减
 - 后台可测试连通性、查看采购记录
+- **也可把本站作为上游**：在「我的上游接口」启用并生成 API Key，把接口地址和 Key 填到另一个 Slogan 的供应商，即可让对方按商品 ID 采购本站卡密
 
 ### 客户与通知
 - 工单系统：用户提交、后台回复、状态流转、邮件通知
@@ -394,6 +395,16 @@ X-Sign: {HMAC-SHA256(api_key, `${order_no}|${goods_id}|${qty}|${timestamp}`) 的
 ```
 
 采购成功后上游卡密以「已售」状态写入本订单并补发，`supplier_orders` 记录成本与上游单号。若你的上游使用其他签名方式（如 MD5、RSA），在 `src/suppliers.ts` 中替换签名实现即可。
+
+### 接自己的另一个 Slogan（Slogan-to-Slogan）
+
+本站现在同时支持「作为下游采购」和「作为上游供货」：
+
+1. **供货站（B 站）**：后台「上游供应商」→「我的上游接口」，启用接口并保存 API Key；复制接口地址（`https://你的域名/api/upstream`）和 API Key。
+2. **采购站（A 站）**：后台「上游供应商」→「添加供应商」，名称随意，接口地址填 B 站的 `/api/upstream`，API Key 填 B 站的 Key；随后在商品编辑器里绑定该供应商，上游商品 ID 填 B 站商品列表里的 `goods_id`（普通商品用 `商品ID`，有规格用 `商品ID:SKU_ID`）。
+3. A 站商品库存不足时，支付成功会按同一套 HMAC 协议向 B 站采购；B 站会扣减对应卡密、标记已售，并记录到 `upstream_orders`，A 站把采购到的卡密补给买家。
+
+B 站只允许自动卡密商品（`delivery_mode = auto`）作为上游；手工/固定内容商品不会出现在可供货列表。上游接口的 `ping` 只校验 API Key 和时间戳，`purchase` 额外校验 HMAC 签名。
 
 ---
 

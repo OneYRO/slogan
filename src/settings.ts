@@ -114,6 +114,10 @@ export const DEFAULT_SECURITY: SecurityConfig = {
     site_key: '',
     secret_key: '',
   },
+  upstream: {
+    enabled: false,
+    api_key: '',
+  },
 };
 
 const DEFAULTS: Record<string, unknown> = {

@@ -9,6 +9,7 @@ import { pay } from './routes/pay';
 import { tickets } from './routes/tickets';
 import { admin, adminPublic } from './routes/admin';
 import { media } from './routes/media';
+import { upstream } from './routes/upstream';
 import { getSite } from './settings';
 import { one } from './db';
 import { merchantSiteConfig, resolveMerchant } from './merchants';
@@ -79,6 +80,7 @@ app.route('/api/tickets', tickets);
 app.route('/api/admin', adminPublic);
 app.route('/api/admin', admin);
 app.route('/api/admin/media', media);
+app.route('/api/upstream', upstream);
 
 /* ------------------------- 媒体文件（R2 直出） ------------------------- */
 app.get('/media/*', async (c) => {

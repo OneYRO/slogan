@@ -1622,7 +1622,7 @@ admin.put('/merchant/profile', async (c) => {
 /* ---------------------------- 设置 ---------------------------- */
 
 const SECRET_FIELDS: Record<string, string[]> = {
-  security: ['turnstile.secret_key'],
+  security: ['turnstile.secret_key', 'upstream.api_key'],
   payment: ['epay.key', 'alipay.private_key', 'usdt.app_secret', 'stripe.secret_key', 'stripe.webhook_secret', 'paypal.client_secret', 'hashpay.api_key', 'hashpay.signing_secret'],
   notify: ['email.password', 'telegram.bot_token'],
 };
@@ -1762,6 +1762,75 @@ admin.post('/suppliers', async (c) => {
   );
   await audit(c, '新建供应商', name);
   return c.json({ ok: true, data: { id: res.meta.last_row_id } });
+});
+
+admin.get('/suppliers/provider', async (c) => {
+  const security = await getSecurity(c.env);
+  const cfg = security.upstream;
+  const products = await all<any>(
+    c.env,
+    `SELECT p.id, p.name, p.price_cents, p.sort,
+       (SELECT COUNT(*) FROM cards c WHERE c.product_id = p.id AND COALESCE(c.sku_id, 0) = 0 AND c.status = 'unused') AS stock,
+       (SELECT COUNT(*) FROM skus s WHERE s.product_id = p.id AND s.enabled = 1) AS sku_count
+     FROM products p
+     WHERE p.status = 'on' AND p.delivery_mode = 'auto'
+     ORDER BY p.sort ASC, p.id DESC LIMIT 200`,
+  );
+  const skus = await all<any>(
+    c.env,
+    `SELECT s.id, s.product_id, s.name, s.price_cents, s.sort, p.name AS product_name, p.price_cents AS product_price_cents,
+       (SELECT COUNT(*) FROM cards c WHERE c.product_id = s.product_id AND c.sku_id = s.id AND c.status = 'unused') AS stock
+     FROM skus s JOIN products p ON p.id = s.product_id
+     WHERE p.status = 'on' AND p.delivery_mode = 'auto' AND s.enabled = 1
+     ORDER BY p.sort ASC, p.id DESC, s.sort ASC, s.id ASC LIMIT 300`,
+  );
+  const orders = await all<any>(
+    c.env,
+    'SELECT * FROM upstream_orders ORDER BY id DESC LIMIT 20',
+  );
+  const goods = [
+    ...products.filter((p) => Number(p.sku_count || 0) === 0).map((p) => ({
+      goods_id: String(p.id),
+      name: p.name,
+      price_cents: Number(p.price_cents || 0),
+      stock: Number(p.stock || 0),
+      type: '商品',
+    })),
+    ...skus.map((s) => ({
+      goods_id: `${s.product_id}:${s.id}`,
+      name: `${s.product_name} / ${s.name}`,
+      price_cents: Number(s.price_cents ?? s.product_price_cents ?? 0),
+      stock: Number(s.stock || 0),
+      type: '规格',
+    })),
+  ];
+  const origin = new URL(c.req.url).origin;
+  return c.json({
+    ok: true,
+    data: {
+      enabled: !!cfg?.enabled,
+      api_key: cfg?.api_key || '',
+      endpoint: `${origin}/api/upstream`,
+      goods,
+      orders,
+    },
+  });
+});
+
+admin.put('/suppliers/provider', async (c) => {
+  const b = await c.req.json<any>().catch(() => ({}));
+  const current = await getSecurity(c.env);
+  let key = String(b.api_key ?? '').trim().slice(0, 200);
+  if (b.regenerate === true) key = randomString(40);
+  if (!key) key = current.upstream?.api_key || randomString(40);
+  if (key.length < 6) throw new HttpError(400, 'API Key 至少 6 位');
+  const enabled = b.enabled === true || b.enabled === 1;
+  await setSetting(c.env, 'security', {
+    ...current,
+    upstream: { enabled, api_key: key },
+  });
+  await audit(c, '更新本站上游接口', enabled ? '启用' : '停用');
+  return c.json({ ok: true, data: { enabled, api_key: key } });
 });
 
 admin.put('/suppliers/:id', async (c) => {
