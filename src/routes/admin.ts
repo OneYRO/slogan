@@ -28,6 +28,7 @@ import {
   randomString,
   totpCode,
   verifyTotp,
+  verifyTotpStep,
   now,
   pageResult,
   pager,
@@ -97,14 +98,21 @@ adminPublic.post('/login', async (c) => {
     throw new HttpError(401, '账号或密码错误');
   }
   if (admin.totp_enabled) {
-    if (!(await verifyTotp(admin.totp_secret || '', String(body.code ?? '')))) {
-      throw new HttpError(401, '动态验证码错误或已过期');
+    const step = await verifyTotpStep(admin.totp_secret || '', String(body.code ?? ''));
+    if (step === null) throw new HttpError(401, '动态验证码错误或已过期');
+    if (step <= Number(admin.totp_last_step || 0)) {
+      throw new HttpError(401, '该动态验证码已使用，请等待下一次验证码');
     }
+    admin._totp_step = step;
   }
   loginClear(`admin:${ip}`);
   const token = await createSession(c.env, 'admin', admin.id, c.req.raw);
   c.header('Set-Cookie', cookieHeader(ADMIN_COOKIE, token, 7 * 86400, c.req.raw));
-  await run(c.env, 'UPDATE admins SET last_login_at = ? WHERE id = ?', now(), admin.id);
+  if (admin.totp_enabled) {
+    await run(c.env, 'UPDATE admins SET last_login_at = ?, totp_last_step = ? WHERE id = ?', now(), admin._totp_step, admin.id);
+  } else {
+    await run(c.env, 'UPDATE admins SET last_login_at = ? WHERE id = ?', now(), admin.id);
+  }
   await audit(c, '登录后台', `管理员 ${admin.username} 登录`);
   const merchant = admin.merchant_id ? await getMerchant(c.env, admin.merchant_id) : null;
   return c.json({
@@ -205,7 +213,7 @@ admin.post('/2fa/disable', async (c) => {
   const row = await one<any>(c.env, 'SELECT totp_secret, totp_enabled FROM admins WHERE id = ?', adminRow.id);
   if (!row?.totp_enabled) throw new HttpError(400, '两步验证未开启');
   if (!(await verifyTotp(row.totp_secret || '', String(b.code ?? '')))) throw new HttpError(400, '动态验证码错误');
-  await run(c.env, 'UPDATE admins SET totp_enabled = 0, totp_secret = NULL WHERE id = ?', adminRow.id);
+  await run(c.env, 'UPDATE admins SET totp_enabled = 0, totp_secret = NULL, totp_last_step = 0 WHERE id = ?', adminRow.id);
   await audit(c, '关闭两步验证');
   return c.json({ ok: true });
 });
@@ -228,10 +236,12 @@ admin.get('/me', async (c) => {
   const a = c.get('admin');
   const site = await getSite(c.env);
   const merchant = a.merchant_id ? await getMerchant(c.env, a.merchant_id) : null;
+  const totp = await one<{ totp_enabled: number }>(c.env, 'SELECT totp_enabled FROM admins WHERE id = ?', a.id);
   return c.json({
     ok: true,
     data: {
       ...a,
+      totp_enabled: !!totp?.totp_enabled,
       site_name: site.name,
       merchant: merchant ? publicMerchant(merchant) : null,
     },

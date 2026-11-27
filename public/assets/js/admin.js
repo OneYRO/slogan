@@ -1489,91 +1489,95 @@
     let secret = '';
     let otpauth = '';
 
-    const render = () => setPage(`
-      <div class="page-head">
-        <div><h1>安全设置</h1><p>为管理员账号开启两步验证（TOTP），登录时需要输入 6 位动态码</p></div>
-      </div>
-      <div class="card">
-        <div class="card-title">${icon('lock', 16)} 两步验证
-          <span class="badge ${me.totp_enabled ? 'badge-green' : 'badge-gray'}">${me.totp_enabled ? '已开启' : '未开启'}</span>
-        </div>
-        <div class="form-grid">
-          <div class="field full">
-            <label>状态</label>
-            <p class="muted" style="margin:0">${me.totp_enabled ? '登录时需输入动态验证码。' : '建议开启，防止密码泄露导致后台被入侵。'}</p>
-          </div>
-          ${!me.totp_enabled ? `
-          <div class="field full">
-            <label>密钥（Base32）</label>
-            <input id="totpSecret" readonly value="${esc(secret)}" placeholder="点击下方按钮生成">
-            <p class="muted" style="margin:8px 0 0">将密钥手动添加到 Google Authenticator / 1Password / Authy，或复制下面的 otpauth 链接。</p>
-          </div>
-          <div class="field full">
-            <label>otpauth 链接</label>
-            <textarea id="otpauthUrl" rows="2" readonly placeholder="生成后显示">${esc(otpauth)}</textarea>
-          </div>
-          <div class="field full" style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-ghost" id="genTotp">${icon('refresh', 15)} ${secret ? '重新生成密钥' : '生成密钥'}</button>
-            <input id="totpEnableCode" inputmode="numeric" maxlength="6" placeholder="输入 6 位动态码" style="max-width:180px">
-            <button class="btn btn-primary" id="enableTotp">${icon('check', 15)} 启用两步验证</button>
-          </div>` : `
-          <div class="field full" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <input id="totpDisableCode" inputmode="numeric" maxlength="6" placeholder="输入动态码以关闭" style="max-width:220px">
-            <button class="btn btn-danger" id="disableTotp">${icon('close', 15)} 关闭两步验证</button>
-          </div>`}
-        </div>
-      </div>
+    const bind = () => {
+      const changePwd = qs('#changePwd');
+      if (changePwd) changePwd.addEventListener('click', async () => {
+        const old_password = qs('#oldPwd').value;
+        const new_password = qs('#newPwd').value;
+        const confirm = qs('#newPwd2').value;
+        if (new_password.length < 10) return toast('新密码至少 10 位', 'error');
+        if (new_password !== confirm) return toast('两次输入的新密码不一致', 'error');
+        await api('/password', { method: 'POST', body: { old_password, new_password } });
+        toast('密码已更新，下次登录生效', 'success');
+        pageSecurity();
+      });
 
-      <div class="card">
-        <div class="card-title">${icon('lock', 16)} 修改登录密码</div>
-        <div class="form-grid">
-          <div class="field"><label>当前密码</label><input id="oldPwd" type="password" autocomplete="current-password"></div>
-          <div class="field"><label>新密码</label><input id="newPwd" type="password" placeholder="至少 10 位" autocomplete="new-password"></div>
-          <div class="field"><label>确认新密码</label><input id="newPwd2" type="password" autocomplete="new-password"></div>
-        </div>
-        <button class="btn btn-primary" id="changePwd">${icon('check', 15)} 保存新密码</button>
-      </div>`);
+      const gen = qs('#genTotp');
+      if (gen) gen.addEventListener('click', async () => {
+        const data = await api('/2fa/setup', { method: 'POST' });
+        secret = data.secret;
+        otpauth = data.otpauth_url;
+        render();
+        toast('密钥已生成，请添加到验证器', 'success');
+      });
 
+      const enable = qs('#enableTotp');
+      if (enable) enable.addEventListener('click', async () => {
+        const code = qs('#totpEnableCode').value.trim();
+        if (!/^\d{6}$/.test(code)) return toast('请输入 6 位动态码', 'error');
+        await api('/2fa/enable', { method: 'POST', body: { code } });
+        toast('两步验证已开启', 'success');
+        pageSecurity();
+      });
+
+      const disable = qs('#disableTotp');
+      if (disable) disable.addEventListener('click', async () => {
+        const code = qs('#totpDisableCode').value.trim();
+        if (!/^\d{6}$/.test(code)) return toast('请输入 6 位动态码', 'error');
+        await api('/2fa/disable', { method: 'POST', body: { code } });
+        toast('两步验证已关闭', 'success');
+        pageSecurity();
+      });
+    };
+
+    const render = () => {
+      setPage(`
+        <div class="page-head">
+          <div><h1>安全设置</h1><p>为管理员账号开启两步验证（TOTP），登录时需要输入 6 位动态码</p></div>
+        </div>
+        <div class="card">
+          <div class="card-title">${icon('lock', 16)} 两步验证
+            <span class="badge ${me.totp_enabled ? 'badge-green' : 'badge-gray'}">${me.totp_enabled ? '已开启' : '未开启'}</span>
+          </div>
+          <div class="form-grid">
+            <div class="field full">
+              <label>状态</label>
+              <p class="muted" style="margin:0">${me.totp_enabled ? '登录时需输入动态验证码。' : '建议开启，防止密码泄露导致后台被入侵。'}</p>
+            </div>
+            ${!me.totp_enabled ? `
+            <div class="field full">
+              <label>密钥（Base32）</label>
+              <input id="totpSecret" readonly value="${esc(secret)}" placeholder="点击下方按钮生成">
+              <p class="muted" style="margin:8px 0 0">将密钥手动添加到 Google Authenticator / 1Password / Authy，或复制下面的 otpauth 链接。</p>
+            </div>
+            <div class="field full">
+              <label>otpauth 链接</label>
+              <textarea id="otpauthUrl" rows="2" readonly placeholder="生成后显示">${esc(otpauth)}</textarea>
+            </div>
+            <div class="field full" style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-ghost" id="genTotp">${icon('refresh', 15)} ${secret ? '重新生成密钥' : '生成密钥'}</button>
+              <input id="totpEnableCode" inputmode="numeric" maxlength="6" placeholder="输入 6 位动态码" style="max-width:180px">
+              <button class="btn btn-primary" id="enableTotp">${icon('check', 15)} 启用两步验证</button>
+            </div>` : `
+            <div class="field full" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <input id="totpDisableCode" inputmode="numeric" maxlength="6" placeholder="输入动态码以关闭" style="max-width:220px">
+              <button class="btn btn-danger" id="disableTotp">${icon('close', 15)} 关闭两步验证</button>
+            </div>`}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">${icon('lock', 16)} 修改登录密码</div>
+          <div class="form-grid">
+            <div class="field"><label>当前密码</label><input id="oldPwd" type="password" autocomplete="current-password"></div>
+            <div class="field"><label>新密码</label><input id="newPwd" type="password" placeholder="至少 10 位" autocomplete="new-password"></div>
+            <div class="field"><label>确认新密码</label><input id="newPwd2" type="password" placeholder="至少 10 位" autocomplete="new-password"></div>
+          </div>
+          <button class="btn btn-primary" id="changePwd">${icon('check', 15)} 保存新密码</button>
+        </div>`);
+      bind();
+    };
     render();
-
-    const changePwd = qs('#changePwd');
-    if (changePwd) changePwd.addEventListener('click', async () => {
-      const old_password = qs('#oldPwd').value;
-      const new_password = qs('#newPwd').value;
-      const confirm = qs('#newPwd2').value;
-      if (new_password.length < 10) return toast('新密码至少 10 位', 'error');
-      if (new_password !== confirm) return toast('两次输入的新密码不一致', 'error');
-      await api('/password', { method: 'POST', body: { old_password, new_password } });
-      toast('密码已更新，下次登录生效', 'success');
-      pageSecurity();
-    });
-
-    const gen = qs('#genTotp');
-    if (gen) gen.addEventListener('click', async () => {
-      const data = await api('/2fa/setup', { method: 'POST' });
-      secret = data.secret;
-      otpauth = data.otpauth_url;
-      render();
-      toast('密钥已生成，请添加到验证器', 'success');
-    });
-
-    const enable = qs('#enableTotp');
-    if (enable) enable.addEventListener('click', async () => {
-      const code = qs('#totpEnableCode').value.trim();
-      if (!/^\d{6}$/.test(code)) return toast('请输入 6 位动态码', 'error');
-      await api('/2fa/enable', { method: 'POST', body: { code } });
-      toast('两步验证已开启', 'success');
-      pageSecurity();
-    });
-
-    const disable = qs('#disableTotp');
-    if (disable) disable.addEventListener('click', async () => {
-      const code = qs('#totpDisableCode').value.trim();
-      if (!/^\d{6}$/.test(code)) return toast('请输入 6 位动态码', 'error');
-      await api('/2fa/disable', { method: 'POST', body: { code } });
-      toast('两步验证已关闭', 'success');
-      pageSecurity();
-    });
   }
 
   /* ================= 支付配置 ================= */

@@ -211,8 +211,8 @@ export function md5(input: string): string {
   buf[len] = 0x80;
   const dv = new DataView(buf.buffer);
   const bitLen = len * 8;
-  dv.setUint32(total - 8, Math.floor(bitLen / 0x100000000), true);
-  dv.setUint32(total - 4, bitLen >>> 0, true);
+  dv.setUint32(total - 8, bitLen >>> 0, true);
+  dv.setUint32(total - 4, Math.floor(bitLen / 0x100000000), true);
 
   let h0 = 0x67452301, h1 = 0xefcdab89, h2 = 0x98badcfe, h3 = 0x10325476;
   const M = new Uint32Array(16);
@@ -385,12 +385,18 @@ export async function totpCode(secret: string, ts = Date.now(), step = 30): Prom
   return String(bin % 1000000).padStart(6, '0');
 }
 
-export async function verifyTotp(secret: string, code: string, window = 1): Promise<boolean> {
+export async function verifyTotpStep(secret: string, code: string, window = 1): Promise<number | null> {
   const clean = String(code || '').replace(/\s/g, '');
-  if (!/^\d{6}$/.test(clean) || !secret) return false;
+  if (!/^\d{6}$/.test(clean) || !secret) return null;
+  const base = Math.floor(Date.now() / 30000);
   for (let w = -window; w <= window; w++) {
-    const expect = await totpCode(secret, Date.now() + w * 30000);
-    if (safeEqual(expect, clean)) return true;
+    const step = base + w;
+    const expect = await totpCode(secret, step * 30000);
+    if (safeEqual(expect, clean)) return step;
   }
-  return false;
+  return null;
+}
+
+export async function verifyTotp(secret: string, code: string, window = 1): Promise<boolean> {
+  return (await verifyTotpStep(secret, code, window)) !== null;
 }
