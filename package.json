@@ -7,9 +7,9 @@
   "scripts": {
     "dev": "wrangler dev --local --port 8787",
     "db:create": "wrangler d1 create slogan",
-    "db:migrate:local": "wrangler d1 migrations apply slogan --local",
-    "db:migrate:remote": "wrangler d1 migrations apply slogan --remote",
-    "deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "deploy": "wrangler deploy && npm run db:migrate:remote && wrangler deploy",
     "typecheck": "tsc --noEmit",
     "smoke": "node tests/smoke.mjs",
     "seed": "node scripts/seed-demo.mjs",

@@ -189,49 +189,48 @@ npm run smoke
 
 ## 五、部署到 Cloudflare
 
-### 方式 A：Wrangler CLI（推荐，最可控）
+### 方式 A：Cloudflare 一键部署（推荐，真正免手动建 D1）
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/OneYRO/slogan)
+
+点按钮后，Cloudflare 会：
+
+1. 把仓库克隆到你自己的 GitHub 账号下（新建一个仓库，原仓库继续作为模板源）；
+2. 自动创建 D1，并把真实的 `database_id` 写回新仓库的 `wrangler.jsonc`；
+3. 自动识别 `package.json` 里的 `deploy` 脚本并配置 Workers Builds。
+
+本项目的 `deploy` 脚本是：
 
 ```bash
-# 1. 登录 Cloudflare
-npx wrangler login
-
-# 2. 创建 D1 数据库（名字可与 wrangler.jsonc 中保持一致）
-npx wrangler d1 create slogan
+wrangler deploy                      # 首次先让 D1 创建/绑定
+wrangler d1 migrations apply DB --remote
+wrangler deploy                      # 再发布最终版本
 ```
 
-命令输出里会有一段配置，把 `database_id` 复制进 `wrangler.jsonc`：
+这样首次部署会自动建库、建表、发布；之后每次 push `main` 都走同一流程。前提是源仓库公开，`OneYRO/slogan` 已经是 public。
 
-```jsonc
-"d1_databases": [
-  {
-    "binding": "DB",
-    "database_name": "slogan",
-    "database_id": "把这里换成刚创建的 ID"
-  }
-]
-```
+### 方式 B：直接连接现有 GitHub 仓库（Workers Builds）
 
-```bash
-# 3. 建表到线上 D1
-npm run db:migrate:remote
+如果你不想让 Cloudflare 克隆新仓库，而是在 Workers & Pages → Import a repository 里直接选 `OneYRO/slogan`，**默认配置仍会失败**，原因不是代码：
 
-# 4. 部署
-npm run deploy
-```
+- 默认构建 token 没有 **D1 Edit** 权限，不能替你创建 D1；
+- 默认 Deploy command 是 `npx wrangler deploy`，不会执行迁移；
+- 如果配置里还留着全 0 的 `database_id`，会直接报 `code 10181`。
 
-部署完成后：
+要让它真正自动建库并部署，需要一次性设置：
 
-1. 访问 `https://你的项目.workers.dev/setup`（或 `https://你的域名/setup`）创建首个管理员
-2. 后台地址为 `https://你的域名/admin`，**上线前务必修改**：
-   ```bash
-   npx wrangler secret put ADMIN_PATH
-   # 输入一个随机字符串，例如 admin-3q9527ko8
-   ```
-   之后后台只能从 `https://你的域名/admin-3q9527ko8` 进入。
-3. 进入后台「支付设置」开启并配置支付渠道；「通知设置」配置 SMTP 或 Resend
-4. 「站点设置」里改站名、公告、客服与备案号
+1. My Profile → API Tokens → Create Custom Token，权限包含：
+   - Account：Workers Scripts Edit、D1 Edit、Account Settings Read
+   - User：User Details Read、Memberships Read
+2. Worker → Settings → Build → API token 选择这个自定义 token。
+3. Build command：`npm ci`；Deploy command：`npm run deploy`。
+4. 确认 `wrangler.jsonc` 的 `d1_databases` 只有 `binding: "DB"`，没有全 0 的 `database_id`（本项目已改好）。
 
-### 方式 B：GitHub Actions 自动部署
+之后 push `main`，Workers Builds 会自动创建 D1、执行迁移并部署。
+
+如果已经有真实 D1 和旧数据，不要走自动创建：把 `database_name` 和 `database_id` 补回配置，再执行 `npm run db:migrate:remote`。
+
+### 方式 C：GitHub Actions 自动部署
 
 在仓库 Settings → Secrets and variables → Actions 添加：
 
@@ -240,21 +239,24 @@ npm run deploy
 | `CLOUDFLARE_API_TOKEN` | Cloudflare API Token（需 Workers Scripts Edit + D1 Edit 权限） |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare Account ID |
 
-推送 `main` 分支后，`.github/workflows/deploy.yml` 会自动执行：安装依赖 → 类型检查 → D1 迁移 → 发布 Worker。
-也可在 Actions 页面手动触发（workflow_dispatch）。
+推送 `main` 后，`.github/workflows/deploy.yml` 会执行类型检查，然后运行 `npm run deploy`（自动创建/绑定 D1、迁移、发布）。也可在 Actions 页面手动触发。
 
-### 方式 C：Dashboard 一键部署
+### 方式 D：本地 Wrangler CLI
 
-把本项目推到自己的 GitHub 仓库（公开）后，在 README 中替换下面的地址，或直接在 Cloudflare Dashboard → Workers → Deploy → 导入 Git 仓库：
-
-```
-https://deploy.workers.cloudflare.com/?url=https://github.com/<你的账号>/slogan
-```
-
-一键部署会自动创建 Worker 与 D1，但**仍需手动执行一次迁移**：
+全新部署（还没有 D1）：
 
 ```bash
-npx wrangler d1 migrations apply slogan --remote
+npm ci
+npx wrangler deploy          # 自动创建并绑定 D1
+npm run db:migrate:remote    # 建表
+npx wrangler deploy          # 发布最终版本
+```
+
+已有真实 D1：在 `wrangler.jsonc` 补回 `database_name` 和 `database_id`，然后：
+
+```bash
+npm ci
+npm run deploy
 ```
 
 ### 绑定自定义域名
@@ -396,7 +398,7 @@ cp legacy.config.example.json legacy.config.json
 
 ```bash
 node scripts/import-legacy.mjs
-npx wrangler d1 execute slogan --remote --file ./legacy-import.sql
+npx wrangler d1 execute DB --remote --file ./legacy-import.sql
 ```
 
 脚本会：
@@ -414,10 +416,10 @@ npx wrangler d1 execute slogan --remote --file ./legacy-import.sql
 
 ```bash
 # 导出线上数据（含结构）
-npx wrangler d1 export slogan --remote --output backup.sql
+npx wrangler d1 export DB --remote --output backup.sql
 
 # 导回
-npx wrangler d1 execute slogan --remote --file ./backup.sql
+npx wrangler d1 execute DB --remote --file ./backup.sql
 ```
 
 - D1 单库建议控制在 10 GB 以内；卡密类商品增长快时，定期归档已售卡密
@@ -446,13 +448,13 @@ npx wrangler d1 execute slogan --remote --file ./backup.sql
 ## 十一、常见问题
 
 **Q：部署后打开是空白页？**
-A：确认 `npm run db:migrate:remote` 已执行；再检查 `wrangler.jsonc` 的 `database_id` 是否替换为真实 ID。
+A：确认 D1 已绑定并执行过 `npm run db:migrate:remote`；如果 `wrangler.jsonc` 里 `database_id` 仍是全 0，说明自动创建未完成，改用一键部署或检查构建 token 的 D1 Edit 权限。
 
 **Q：支付成功了但没发货？**
 A：先看后台「订单」是否变为已支付；若回调未到，检查支付平台填写的回调地址是否为 `https://域名/api/pay/notify/xxx`，以及是否被 Cloudflare 防火墙拦截。回调日志在后台「通知日志」。
 
 **Q：忘记后台密码？**
-A：用 `npx wrangler d1 execute slogan --remote --command "DELETE FROM admins"` 清空管理员，再访问 `/setup` 重建（会保留商品与订单数据）。
+A：用 `npx wrangler d1 execute DB --remote --command "DELETE FROM admins"` 清空管理员，再访问 `/setup` 重建（会保留商品与订单数据）。
 
 **Q：本地开发的 `--local` 数据在哪里？**
 A：`.wrangler/state/v3/d1/`，删除该目录即可重置本地库。

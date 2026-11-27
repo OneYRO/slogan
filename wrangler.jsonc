@@ -14,12 +14,11 @@
     "run_worker_first": true
   },
 
-  // D1 数据库：本地开发用占位 ID，线上由 wrangler d1 create 生成
+  // D1 数据库：只声明 binding，首次 deploy 时由 Cloudflare 自动创建并绑定（Wrangler 4.45+）
+  // 已有真实 D1 时可手动补回 database_name / database_id，沿用旧数据
   "d1_databases": [
     {
-      "binding": "DB",
-      "database_name": "slogan",
-      "database_id": "00000000-0000-0000-0000-000000000000"
+      "binding": "DB"
     }
   ],
 
