@@ -106,7 +106,7 @@ Slogan 把发卡站需要的商品、卡密、订单、支付、会员、营销�
 - 自定义后台路径（`ADMIN_PATH`），例如 `/admin-3q9527ko8`
 
 ### 安全
-- PBKDF2-SHA256 密码哈希（12 万次迭代）
+- PBKDF2-SHA256 密码哈希（10 万次迭代，Cloudflare Workers Web Crypto 上限）
 - **管理员两步验证（TOTP / RFC 6238）**，登录需 6 位动态码
 - D1 会话 + HttpOnly Cookie，7 天有效期
 - 登录失败限流、全站写操作限流

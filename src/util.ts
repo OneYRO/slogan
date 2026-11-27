@@ -161,7 +161,11 @@ export async function hmacSha256(key: string, data: string): Promise<string> {
   return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-export async function pbkdf2(password: string, salt: string, iterations = 120000): Promise<string> {
+// Cloudflare Workers Web Crypto caps PBKDF2 at 100,000 iterations.
+// Hashes previously created with 120,000 cannot be verified on Workers and need a password reset.
+const PBKDF2_ITERATIONS = 100000;
+
+export async function pbkdf2(password: string, salt: string, iterations = PBKDF2_ITERATIONS): Promise<string> {
   const key = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits(
     { name: 'PBKDF2', salt: encoder.encode(salt), iterations, hash: 'SHA-256' },
@@ -174,14 +178,17 @@ export async function pbkdf2(password: string, salt: string, iterations = 120000
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomString(16, 'abcdef0123456789');
   const hash = await pbkdf2(password, salt);
-  return `pbkdf2$120000$${salt}$${hash}`;
+  return `pbkdf2$${PBKDF2_ITERATIONS}$${salt}$${hash}`;
 }
 
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const parts = String(stored).split('$');
   if (parts.length !== 4 || parts[0] !== 'pbkdf2') return false;
   const [, iter, salt, hash] = parts;
-  const calc = await pbkdf2(password, salt, Number(iter) || 120000);
+  const iterations = Number(iter) || PBKDF2_ITERATIONS;
+  // Legacy 120k hashes exceed the Workers Web Crypto limit; return false instead of throwing a 500.
+  if (!Number.isFinite(iterations) || iterations <= 0 || iterations > PBKDF2_ITERATIONS) return false;
+  const calc = await pbkdf2(password, salt, iterations);
   return safeEqual(calc, hash);
 }
 

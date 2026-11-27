@@ -240,7 +240,7 @@ async function main() {
   const tokenHash = createHash('sha256').update(rawToken).digest('hex');
   const tsNow = Date.now();
   execSync(
-    `npx wrangler d1 execute slogan --local --command "INSERT INTO password_resets (email, token_hash, expires_at, created_at) VALUES ('${email}','${tokenHash}',${tsNow + 600000},${tsNow})"`,
+    `npx wrangler d1 execute DB --local --command "INSERT INTO password_resets (email, token_hash, expires_at, created_at) VALUES ('${email}','${tokenHash}',${tsNow + 600000},${tsNow})"`,
     { cwd: process.cwd(), stdio: 'ignore' },
   );
   const badReset = await api('POST', '/api/auth/reset', { token: 'wrong-token', password: 'new-pass-2026' });
