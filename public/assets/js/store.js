@@ -321,7 +321,13 @@
       </div>`;
       const btn = qs('#userMenuBtn');
       const pop = qs('#userMenuPop');
-      btn.addEventListener('click', (e) => { e.stopPropagation(); pop.classList.toggle('open'); });
+      btn.setAttribute('aria-haspopup', 'true');
+      btn.setAttribute('aria-expanded', 'false');
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const open = pop.classList.toggle('open');
+        btn.setAttribute('aria-expanded', String(open));
+      });
       qs('#logoutBtn').addEventListener('click', async () => {
         await request('/api/auth/logout', { method: 'POST' });
         S.user = null;
@@ -364,6 +370,7 @@
       const menu = document.getElementById('userMenu');
       if (menu && !menu.contains(e.target)) {
         document.getElementById('userMenuPop')?.classList.remove('open');
+        document.getElementById('userMenuBtn')?.setAttribute('aria-expanded', 'false');
       }
     });
 

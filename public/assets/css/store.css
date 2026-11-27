@@ -192,10 +192,11 @@ svg { display: block; }
   display: grid; place-items: center; box-shadow: var(--shadow-xs);
 }
 .user-menu-pop {
-  position: absolute; right: 0; top: calc(100% + 10px); width: 220px; z-index: 90;
+  display: none; position: absolute; right: 0; top: calc(100% + 10px); width: 220px; z-index: 90;
   background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
-  box-shadow: var(--shadow); padding: 8px; animation: pop .16s ease;
+  box-shadow: var(--shadow); padding: 8px; transform-origin: top right;
 }
+.user-menu-pop.open { display: block; animation: pop .16s ease; }
 .user-menu-head { padding: 10px 12px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
 .user-menu-head strong { display: block; font-size: 13px; }
 .user-menu-head span { font-size: 11px; color: var(--muted); }
